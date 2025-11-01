@@ -2,17 +2,18 @@ import os
 from datetime import date
 import pandas as pd
 import streamlit as st
-import matplotlib.pyplot as plt
-
+# ==================== CONFIG ====================
 st.set_page_config(
     page_title="💰 Money Tracker",
-    layout="wide",  # Largeur totale de la page
+    layout="wide",
     initial_sidebar_state="expanded"
 )
 
 CSV_PATH = "expenses.csv"
+USERS_CSV = "users.csv"
 
-# --- Fonctions CSV ---
+# ==================== FONCTIONS ====================
+# CSV Dépenses
 def load_csv():
     if os.path.exists(CSV_PATH):
         return pd.read_csv(CSV_PATH)
@@ -21,74 +22,166 @@ def load_csv():
 def save_csv(df):
     df.to_csv(CSV_PATH, index=False)
 
-# --- Données ---
+# CSV Utilisateurs
+def register_user(email, pwd, name, phone):
+    if not os.path.exists(USERS_CSV):
+        pd.DataFrame(columns=["email","pwd","name","phone"]).to_csv(USERS_CSV,index=False)
+    users = pd.read_csv(USERS_CSV)
+    if email in users["email"].values:
+        return False
+    new_user = pd.DataFrame([{"email": email, "pwd": pwd, "name": name, "phone": phone}])
+    users = pd.concat([users, new_user], ignore_index=True)
+    users.to_csv(USERS_CSV, index=False)
+    return True
+
+def authenticate(email, pwd):
+    if not os.path.exists(USERS_CSV):
+        return None
+    users = pd.read_csv(USERS_CSV)
+    user = users[(users["email"]==email) & (users["pwd"]==pwd)]
+    if not user.empty:
+        return user.iloc[0].to_dict()
+    return None
+
+# Calcul intérêts
+def compute_interest(principal, annual_rate, period):
+    r = annual_rate / 100.0
+    if period == "Mensuel":
+        monthly_interest = principal * (r / 12)
+        return {"monthly": monthly_interest, "yearly": monthly_interest * 12}
+    else:
+        yearly_interest = principal * r
+        return {"monthly": yearly_interest / 12, "yearly": yearly_interest}
+
+# ==================== DONNÉES ====================
 df = load_csv()
 
-# --- Mise en page principale : 2 colonnes ---
-col_menu, col_main = st.columns([1, 3])  # menu = 1/4, contenu = 3/4
+# ==================== BARRE DE NAVIGATION HAUT ====================
+st.markdown("""
+    <style>
+    .nav {
+        background-color: #a8e6cf;
+        padding: 10px;
+        border-radius: 10px;
+        display: flex;
+        justify-content: space-around;
+        align-items: center;
+        font-weight: 600;
+    }
+    .nav-item {
+        cursor: pointer;
+        padding: 8px 16px;
+        border-radius: 6px;
+        transition: background 0.2s;
+    }
+    .nav-item:hover {
+        background-color: #81c784;
+        color: white;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-# ==================== MENU LATÉRAL ====================
-with col_menu:
-    st.header("🏦 Espace personnel")
-    st.write("Naviguez entre les différentes sections :")
+# Crée une barre de navigation
+tabs = ["⚙️ Compte" , "📋 Suivi des dépenses", "📈 Graphiques", "💸 Prêts", "💰 Placements"]
+selected_tab = st.radio("Navigation", tabs, horizontal=True, label_visibility="collapsed", key="menu")
 
-    section = st.radio(
-        "Choisissez une section :",
-        ["📋 Suivi des dépenses", "📈 Graphique mensuel", "💸 Prêts", "💰 Placements"]
-    )
-st.markdown("---")
-st.info("💡 Astuce : ajoutez vos dépenses dans la section principale.")
-# ==================== CONTENU PRINCIPAL ====================
-with col_main:
+st.markdown(f"<div class='nav'> <b>{selected_tab}</b></div>", unsafe_allow_html=True)
 
-    if section == "📋 Suivi des dépenses":
-        st.title("💰 Money Tracker — Suivi de vos dépenses")
 
-        col1, col2 = st.columns(2)
-        with col1:
-            d = st.date_input("Date", value=date.today())
-            cat = st.selectbox("Catégorie", ["Alimentation", "Transport", "Logement", "Shopping", "Autres"])
-        with col2:
-            amount = st.number_input("Montant (€)", min_value=0.0, step=1.0)
-            desc = st.text_input("Description (facultatif)")
-
-        if st.button("➕ Ajouter la dépense"):
-            if amount > 0:
-                new_row = {"date": d.isoformat(), "category": cat, "amount": amount, "desc": desc}
-                df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-                save_csv(df)
-                st.success("✅ Dépense enregistrée !")
+        
+# ==================== COMPTE ====================
+if selected_tab == "⚙️ Compte":
+    st.title("⚙️ Mon compte")
+    choice = st.selectbox("Connexion / Inscription", ["Se connecter", "S'enregistrer"])
+    
+    if choice == "S'enregistrer":
+        st.subheader("Créer un nouveau compte")
+        new_email = st.text_input("Email", key="reg_email")
+        new_pwd = st.text_input("Mot de passe", type="password", key="reg_pwd")
+        new_name = st.text_input("Nom complet", key="reg_name")
+        new_phone = st.text_input("Téléphone", key="reg_phone")
+        
+        if st.button("Créer un compte", key="btn_register"):
+            ok = register_user(new_email, new_pwd, new_name, new_phone)
+            if ok:
+                st.success("Compte créé. Connectez-vous ci-dessous.")
             else:
-                st.warning("⚠️ Entrez un montant > 0")
+                st.error("Cet email est déjà utilisé.")
+    
+    else:  # Se connecter
+        st.subheader("Se connecter")
+        email = st.text_input("Email", key="login_email")
+        pwd = st.text_input("Mot de passe", type="password", key="login_pwd")
+        
+        if st.button("Se connecter", key="btn_login"):
+            user_data = authenticate(email, pwd)
+            if user_data:
+                st.session_state.logged_in = True
+                st.session_state.user_data = user_data
+                st.success(f"Connecté(e) : {email}")
+            else:
+                st.error("Email ou mot de passe incorrect.")
+    
+    # Affichage des données personnelles si connecté
+    if st.session_state.get("logged_in", False):
+        st.subheader("📄 Mes données personnelles")
+        user = st.session_state.get("user_data", {})
+        st.write(f"**Nom :** {user.get('name','')}")
+        st.write(f"**Email :** {user.get('email','')}")
+        st.write(f"**Téléphone :** {user.get('phone','')}")
 
-        st.markdown("---")
-        st.subheader("📋 Mes dépenses")
-        st.dataframe(df, width='stretch')
+# ==================== SUIVI DES DÉPENSES ====================
+elif selected_tab == "📋 Suivi des dépenses":
+    st.title("💰 Money Tracker — Suivi de vos dépenses")
+    col1, col2 = st.columns(2)
+    with col1:
+        d = st.date_input("Date", value=date.today())
+        cat = st.selectbox("Catégorie", ["Alimentation", "Transport", "Logement", "Shopping", "Autres"])
+    with col2:
+        amount = st.number_input("Montant (€)", min_value=0.0, step=1.0)
+        desc = st.text_input("Description (facultatif)")
 
-        total = float(df["amount"].sum()) if not df.empty else 0.0
-        st.metric("💵 Total des dépenses", f"{total:,.2f} €".replace(",", " "))
-
-    elif section == "📈 Graphique mensuel":
-        st.title("📈 Graphique mensuel des dépenses")
-        if not df.empty:
-            df["date"] = pd.to_datetime(df["date"])
-            df["month"] = df["date"].dt.to_period("M")
-            monthly = df.groupby("month")["amount"].sum()
-            st.bar_chart(monthly)
+    if st.button("➕ Ajouter la dépense"):
+        if amount > 0:
+            new_row = {"date": d.isoformat(), "category": cat, "amount": amount, "desc": desc}
+            df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+            save_csv(df)
+            st.success("✅ Dépense enregistrée !")
         else:
-            st.info("Aucune donnée pour le moment.")
+            st.warning("⚠️ Entrez un montant > 0")
 
-    elif section == "💸 Prêts":
-        st.title("💸 Gestion des prêts")
-        st.write("💡 Ici, vous pourrez ajouter ou suivre vos crédits (bancaires, personnels, etc.)")
-        st.warning("Section en construction 🚧")
+    st.markdown("---")
+    st.subheader("📋 Mes dépenses")
+    st.dataframe(df, width='stretch')
+    total = float(df["amount"].sum()) if not df.empty else 0.0
+    st.metric("💵 Total des dépenses", f"{total:,.2f} €".replace(",", " "))
 
-    elif section == "💰 Placements":
-        st.title("💰 Placements et investissements")
-        st.write("💡 Suivez vos placements sur livret, actions ou crypto ici.")
-        st.warning("Section en construction 🚧")
+# ==================== GRAPHIQUE ====================
+elif selected_tab == "📈 Graphique mensuel":
+    st.title("📈 Graphique mensuel des dépenses")
+    if not df.empty:
+        df["date"] = pd.to_datetime(df["date"])
+        df["month"] = df["date"].dt.to_period("M")
+        monthly = df.groupby("month")["amount"].sum()
+        st.bar_chart(monthly)
+    else:
+        st.info("Aucune donnée pour le moment.")
 
+# ==================== PRÊTS ====================
+elif selected_tab == "💸 Prêts":
+    st.title("💸 Gestion des prêts")
+    st.write("💡 Ici, vous pourrez ajouter ou suivre vos crédits (bancaires, personnels, etc.)")
+    st.warning("Section en construction 🚧")
 
+# ==================== PLACEMENTS ====================
+elif selected_tab == "💰 Placements":
+    st.title("💰 Placements")
+    st.write("Calculez l'intérêt reçu pour un placement.")
+    principal = st.number_input("Montant placé (€)", min_value=0.0, step=10.0, key="principal")
+    annual_rate = st.number_input("Taux annuel (%)", min_value=0.0, step=0.1, key="rate")
+    period = st.selectbox("Période de calcul", ["Mensuel", "Annuel"])
 
-
-
+    if st.button("Calculer l'intérêt"):
+        res = compute_interest(principal, annual_rate, period)
+        st.success(f"Intérêt mensuel estimé : {res['monthly']:.2f} €")
+        st.info(f"Intérêt annuel estimé : {res['yearly']:.2f} €")
