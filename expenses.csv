@@ -1,2 +1,6 @@
-date,category,amount,desc
-2025-11-01,Transport,40.0,abonnement train
+date,category,amount,desc,owner_email
+2025-11-01,Transport,40.0,abonnement train,
+2025-11-01,Logement,1000.0,,
+2025-11-01,Alimentation,60.0,,rim.ghomrassi@icloud.com
+2025-11-01,Transport,20.0,,rim.ghomrassi@icloud.com
+2025-11-01,Logement,1000.0,,rim.ghomrassi@icloud.com
